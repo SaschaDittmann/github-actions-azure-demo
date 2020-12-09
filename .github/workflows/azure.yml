@@ -87,4 +87,4 @@ jobs:
       with:
         azcliversion: latest
         inlineScript: |
-          az storage blob sync -s . -c '$web' --account-name "$STORAGE_ACCOUNT_NAME"
+          az storage blob sync -s ./webapp -c '$web' --account-name "$STORAGE_ACCOUNT_NAME"
