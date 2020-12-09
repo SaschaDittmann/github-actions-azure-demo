@@ -13,7 +13,7 @@ jobs:
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    - name: Create Storage Account
+    - name: Create Storage Account (Web App)
       uses: azure/CLI@v1
       env:
         STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
@@ -23,6 +23,29 @@ jobs:
         azcliversion: latest
         inlineScript: |
           az storage account create -n "$STORAGE_ACCOUNT_NAME" -g "$RESOURCE_GROUP" --sku Standard_LRS -l "$REGION"
+
+    - name: Create Storage Account (Functions App)
+      uses: azure/CLI@v1
+      env:
+        STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_FUNCTIONS_APP_STORAGE }}
+        RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+        REGION: ${{ secrets.AZURE_REGION }}
+      with:
+        azcliversion: latest
+        inlineScript: |
+          az storage account create -n "$STORAGE_ACCOUNT_NAME" -g "$RESOURCE_GROUP" --sku Standard_LRS -l "$REGION"
+
+    - name: Create Functions App
+      uses: azure/CLI@v1
+      env:
+        FUNCTIONS_APP_NAME: ${{ secrets.AZURE_FUNCTIONS_APP_NAME }}
+        STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_FUNCTIONS_APP_STORAGE }}
+        RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+        REGION: ${{ secrets.AZURE_REGION }}
+      with:
+        azcliversion: latest
+        inlineScript: |
+          az functionapp create -n "$FUNCTIONS_APP_NAME" -g "$RESOURCE_GROUP" -l "$RESOURCE_GROUP" -s "$STORAGE_ACCOUNT_NAME" --functions-version 3 --runtime dotnet
 
   build-webapp:
     runs-on: ubuntu-latest
