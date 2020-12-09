@@ -45,7 +45,7 @@ jobs:
       with:
         azcliversion: latest
         inlineScript: |
-          az functionapp create -n "$FUNCTIONS_APP_NAME" -g "$RESOURCE_GROUP" -l "$RESOURCE_GROUP" -s "$STORAGE_ACCOUNT_NAME" --functions-version 3 --runtime dotnet
+          az functionapp create -n "$FUNCTIONS_APP_NAME" -g "$RESOURCE_GROUP" --consumption-plan-location "$REGION" -s "$STORAGE_ACCOUNT_NAME" --functions-version 3 --runtime dotnet
 
   build-webapp:
     runs-on: ubuntu-latest
@@ -80,6 +80,7 @@ jobs:
         with:
           name: static-webapp
           path: ./webapp/dist/
+
   deploy-webapp:
     needs: [build-webapp, create-azure-resources]
     runs-on: ubuntu-latest
