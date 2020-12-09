@@ -64,7 +64,6 @@ jobs:
           az functionapp show -n "$FUNCTIONS_APP_NAME" -g "$RESOURCE_GROUP" > metadata/azure-function-app.json
           functionapp_key=$(az functionapp keys list -n githubactionsdemo-func -g githubactionsdemo --query functionKeys.default -o tsv)
           echo $functionapp_key >> metadata/functionapp_key.txt
-          echo "functionapp_key=$functionapp_key" >> $GITHUB_ENV
 
     - name: Set Functions App CORS
       uses: azure/CLI@v1
@@ -74,7 +73,7 @@ jobs:
       with:
         azcliversion: latest
         inlineScript: |
-          az functionapp cors add -n "$FUNCTIONS_APP_NAME" -g "$RESOURCE_GROUP" -a "$functionapp_key"
+          az functionapp cors add -n "$FUNCTIONS_APP_NAME" -g "$RESOURCE_GROUP" -a "$(cat metadata/webapp_url.txt)"
 
     - name: Store Metadata
       uses: actions/upload-artifact@v2
