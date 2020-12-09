@@ -106,8 +106,8 @@ jobs:
         run: |
           functionapp_key_escaped=$(cat ./metadata/functionapp_key.txt | sed -e 's/[\/&]/\\&/g')
           cat ./webapp/src/environments/environment.prod.ts \
-            sed "s/<name-of-your-functions-app>/$FUNCTIONS_APP_NAME/g" \
-            sed "s/<key-of-your-functions-app>/$functionapp_key_escaped/g" \
+            | sed "s/<name-of-your-functions-app>/$FUNCTIONS_APP_NAME/g" \
+            | sed "s/<key-of-your-functions-app>/$functionapp_key_escaped/g" \
             > ./webapp/src/environments/environment.prod.ts
 
       - name: npm ci and npm run build
