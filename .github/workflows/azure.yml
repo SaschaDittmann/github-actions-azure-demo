@@ -39,3 +39,24 @@ jobs:
         with:
           name: static-webapp
           path: ./webapp/dist/
+  deploy-webapp:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Get Website
+      uses: actions/download-artifact@v2
+      with:
+        name: static-webapp
+
+    - uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+    
+    - name: Upload Files
+      uses: azure/CLI@v1
+      env:
+        STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+      with:
+        azcliversion: latest
+        inlineScript: |
+          az storage blob sync -s . -c '$web' --account-name "$STORAGE_ACCOUNT_NAME"
