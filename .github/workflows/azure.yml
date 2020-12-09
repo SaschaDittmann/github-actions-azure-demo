@@ -12,10 +12,8 @@ jobs:
     - uses: azure/login@v1
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
-
     - name: Create Metadata Folder
       run: mkdir -p metadata
-
     - name: Create Storage Account (Web App)
       uses: azure/CLI@v1
       env:
@@ -26,7 +24,6 @@ jobs:
         azcliversion: latest
         inlineScript: |
           az storage account create -n "$STORAGE_ACCOUNT_NAME" -g "$RESOURCE_GROUP" --sku Standard_LRS -l "$REGION"
-
     - name: Configure Static Website
       uses: azure/CLI@v1
       env:
@@ -38,7 +35,6 @@ jobs:
           webapp_url=$(az storage account show -n githubactionsdemowebapp -g githubactionsdemo --query primaryEndpoints.web -o tsv)
           echo $webapp_url >> metadata/webapp_url.txt
           echo "::set-output name=webapp_url::$webapp_url"
-
     - name: Create Storage Account (Functions App)
       uses: azure/CLI@v1
       env:
@@ -49,7 +45,6 @@ jobs:
         azcliversion: latest
         inlineScript: |
           az storage account create -n "$STORAGE_ACCOUNT_NAME" -g "$RESOURCE_GROUP" --sku Standard_LRS -l "$REGION"
-
     - name: Create Functions App
       uses: azure/CLI@v1
       env:
@@ -64,7 +59,6 @@ jobs:
           az functionapp show -n "$FUNCTIONS_APP_NAME" -g "$RESOURCE_GROUP" > metadata/azure-function-app.json
           functionapp_key=$(az functionapp keys list -n githubactionsdemo-func -g githubactionsdemo --query functionKeys.default -o tsv)
           echo $functionapp_key >> metadata/functionapp_key.txt
-
     - name: Set Functions App CORS
       uses: azure/CLI@v1
       env:
@@ -74,7 +68,6 @@ jobs:
         azcliversion: latest
         inlineScript: |
           az functionapp cors add -n "$FUNCTIONS_APP_NAME" -g "$RESOURCE_GROUP" -a "$(cat metadata/webapp_url.txt)"
-
     - name: Store Metadata
       uses: actions/upload-artifact@v2
       with:
@@ -87,16 +80,13 @@ jobs:
     strategy:
       matrix:
         node-version: [12.x]
-
     steps:
       - uses: actions/checkout@v1
-
       - name: Get Metadata
         uses: actions/download-artifact@v2
         with:
           name: metadata
           path: ./metadata/
-
       - name: Cache node modules
         uses: actions/cache@v1
         with:
@@ -104,12 +94,10 @@ jobs:
           key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-node-
-
       - name: Node ${{ matrix.node-version }}
         uses: actions/setup-node@v1
         with:
           node-version: ${{ matrix.node-version }}
-
       - name: Configure Prod Environment File
         env:
           FUNCTIONS_APP_NAME: ${{ secrets.AZURE_FUNCTIONS_APP_NAME }}
@@ -119,13 +107,11 @@ jobs:
             | sed "s/<name-of-your-functions-app>/$FUNCTIONS_APP_NAME/g" \
             | sed "s/<key-of-your-functions-app>/$functionapp_key_escaped/g" \
             > ./webapp/src/environments/environment.prod.ts
-
       - name: npm ci and npm run build
         working-directory: ./webapp
         run: |
           npm ci
           npm run build:ci
-
       - name: Store Website
         uses: actions/upload-artifact@v2
         with:
@@ -135,17 +121,14 @@ jobs:
   deploy-webapp:
     needs: [build-webapp, create-azure-resources]
     runs-on: ubuntu-latest
-
     steps:
     - name: Get Website
       uses: actions/download-artifact@v2
       with:
         name: static-webapp
-
     - uses: azure/login@v1
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
-
     - name: Upload Files
       uses: azure/CLI@v1
       env:
@@ -154,3 +137,26 @@ jobs:
         azcliversion: latest
         inlineScript: |
           az storage blob sync -s ./webapp -c '$web' --account-name "$STORAGE_ACCOUNT_NAME"
+
+  build-and-deploy-azurefunctions:
+    needs: [build-webapp, create-azure-resources]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: Setup DotNet ${{ env.DOTNET_VERSION }} Environment
+      uses: actions/setup-dotnet@v1
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+    - name: 'Resolve Project Dependencies Using Dotnet'
+      shell: bash
+      run: |
+        pushd './azurefunctions'
+        dotnet build --configuration Release --output ./output
+        popd
+    - name: 'Run Azure Functions Action'
+      uses: Azure/functions-action@v1
+      id: fa
+      with:
+        app-name: ${{ env.AZURE_FUNCTIONS_APP_NAME }}
+        package: './azurefunctions/output'
+        publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
