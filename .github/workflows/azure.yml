@@ -13,6 +13,9 @@ jobs:
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+    - name: Create Metadata Folder
+      run: mkdir -p metadata
+
     - name: Create Storage Account (Web App)
       uses: azure/CLI@v1
       env:
@@ -23,6 +26,18 @@ jobs:
         azcliversion: latest
         inlineScript: |
           az storage account create -n "$STORAGE_ACCOUNT_NAME" -g "$RESOURCE_GROUP" --sku Standard_LRS -l "$REGION"
+
+    - name: Configure Static Website
+      uses: azure/CLI@v1
+      env:
+        STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+      with:
+        azcliversion: latest
+        inlineScript: |
+          az storage blob service-properties update --account-name "$STORAGE_ACCOUNT_NAME" --static-website --404-document "404.html" --index-document "index.html"
+          webapp_url=$(az storage account show -n githubactionsdemowebapp -g githubactionsdemo --query primaryEndpoints.web -o tsv)
+          echo "{ \"url\": \"$webapp_url\" }" >> metadata/webapp.json
+          echo "::set-output name=webapp_url::$webapp_url"
 
     - name: Create Storage Account (Functions App)
       uses: azure/CLI@v1
@@ -45,9 +60,19 @@ jobs:
       with:
         azcliversion: latest
         inlineScript: |
-          az functionapp create -n "$FUNCTIONS_APP_NAME" -g "$RESOURCE_GROUP" --consumption-plan-location "$REGION" -s "$STORAGE_ACCOUNT_NAME" --functions-version 3 --runtime dotnet
+          az functionapp create -n "$FUNCTIONS_APP_NAME" -g "$RESOURCE_GROUP" --consumption-plan-location "$REGION" -s "$STORAGE_ACCOUNT_NAME" --functions-version 3 --runtime dotnet 
+          az functionapp show -n "$FUNCTIONS_APP_NAME" -g "$RESOURCE_GROUP" > metadata/azure-function-app.json
+          functionapp_key=$(az functionapp keys list -n githubactionsdemo-func -g githubactionsdemo --query functionKeys.default -o tsv)
+          echo "{ \"key\": \"$functionapp_key\" }" >> metadata/functionapp_key.json
+
+    - name: Store Metadata
+      uses: actions/upload-artifact@v2
+      with:
+        name: metadata
+        path: ./metadata/
 
   build-webapp:
+    needs: create-azure-resources
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -55,6 +80,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v1
+
+      - name: Get Metadata
+        uses: actions/download-artifact@v2
+        with:
+          name: metadata
+          path: ./metadata/
 
       - name: Cache node modules
         uses: actions/cache@v1
@@ -68,6 +99,11 @@ jobs:
         uses: actions/setup-node@v1
         with:
           node-version: ${{ matrix.node-version }}
+
+      - name: set api config
+        run: |
+          cat ./webapp/src/environments/environment.prod.ts
+          ls ./metadata/
 
       - name: npm ci and npm run build
         working-directory: ./webapp
@@ -95,15 +131,6 @@ jobs:
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    - name: Configure Static Website
-      uses: azure/CLI@v1
-      env:
-        STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
-      with:
-        azcliversion: latest
-        inlineScript: |
-          az storage blob service-properties update --account-name "$STORAGE_ACCOUNT_NAME" --static-website --404-document "404.html" --index-document "index.html"
-    
     - name: Upload Files
       uses: azure/CLI@v1
       env:
