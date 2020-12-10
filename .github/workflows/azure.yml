@@ -89,7 +89,7 @@ jobs:
         azcliversion: latest
         inlineScript: |
           az cosmosdb sql database create -a "$COSMOSDB_ACCOUNT" -g "$RESOURCE_GROUP" -n "$COSMOSDB_DATABASEID"
-          az cosmosdb sql container create -a "$COSMOSDB_ACCOUNT" -g "$RESOURCE_GROUP" -d "$COSMOSDB_DATABASEID" -n "$COSMOSDB_CONTAINERID" --partition-key-path "/cityname" --throughput "400"
+          az cosmosdb sql container create -a "$COSMOSDB_ACCOUNT" -g "$RESOURCE_GROUP" -d "$COSMOSDB_DATABASEID" -n "$COSMOSDB_CONTAINERID" --partition-key-path "/cityname"
     - name: Store Metadata
       uses: actions/upload-artifact@v2
       with:
