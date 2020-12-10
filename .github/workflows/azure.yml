@@ -35,7 +35,7 @@ jobs:
           webapp_url=$(az storage account show -n githubactionsdemowebapp -g githubactionsdemo --query primaryEndpoints.web -o tsv)
           echo $webapp_url >> metadata/webapp_url.txt
           echo "::set-output name=webapp_url::$webapp_url"
-    - name: Create Storage Account (Functions App)
+    - name: Create Storage Account (Function App)
       uses: azure/CLI@v1
       env:
         STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_FUNCTIONAPP_STORAGE }}
@@ -45,7 +45,7 @@ jobs:
         azcliversion: latest
         inlineScript: |
           az storage account create -n "$STORAGE_ACCOUNT_NAME" -g "$RESOURCE_GROUP" --sku Standard_LRS -l "$REGION"
-    - name: Create Functions App
+    - name: Create Function App
       uses: azure/CLI@v1
       env:
         FUNCTIONAPP_NAME: ${{ secrets.AZURE_FUNCTIONAPP_NAME }}
@@ -59,7 +59,7 @@ jobs:
           az functionapp show -n "$FUNCTIONAPP_NAME" -g "$RESOURCE_GROUP" > metadata/azure-function-app.json
           functionapp_key=$(az functionapp keys list -n githubactionsdemo-func -g githubactionsdemo --query functionKeys.default -o tsv)
           echo $functionapp_key >> metadata/functionapp_key.txt
-    - name: Set Functions App CORS
+    - name: Set Function App CORS
       uses: azure/CLI@v1
       env:
         FUNCTIONAPP_NAME: ${{ secrets.AZURE_FUNCTIONAPP_NAME }}
@@ -77,7 +77,6 @@ jobs:
         azcliversion: latest
         inlineScript: |
           az cosmosdb create -n "$COSMOSDB_ACCOUNT" -g "$RESOURCE_GROUP"
-          az cosmosdb keys list -n "$COSMOSDB_ACCOUNT" -g "$RESOURCE_GROUP" > metadata/cosmosdb_keys.json
     - name: Create CosmosDB Database and Container
       uses: azure/CLI@v1
       env:
@@ -90,6 +89,21 @@ jobs:
         inlineScript: |
           az cosmosdb sql database create -a "$COSMOSDB_ACCOUNT" -g "$RESOURCE_GROUP" -n "$COSMOSDB_DATABASEID"
           az cosmosdb sql container create -a "$COSMOSDB_ACCOUNT" -g "$RESOURCE_GROUP" -d "$COSMOSDB_DATABASEID" -n "$COSMOSDB_CONTAINERID" --partition-key-path "/cityname"
+    - name: Set Function App AppSettings
+      uses: azure/CLI@v1
+      env:
+        FUNCTIONAPP_NAME: ${{ secrets.AZURE_FUNCTIONAPP_NAME }}
+        COSMOSDB_ACCOUNT: ${{ secrets.AZURE_COSMOSDB_ACCOUNT }}
+        RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+        COSMOSDB_DATABASEID: ${{ secrets.AZURE_COSMOSDB_DATABASEID }}
+      with:
+        azcliversion: latest
+        inlineScript: |
+          cosmosdb_key=$(az cosmosdb keys list -n "$COSMOSDB_ACCOUNT" -g "$RESOURCE_GROUP" | jq -r '.primaryMasterKey')
+          cosmosdb_endpoint=$(az cosmosdb show -n githubactionsdemo-cosmos -g githubactionsdemo --query 'documentEndpoint' -o tsv)
+          az functionapp config appsettings set -n "$FUNCTIONAPP_NAME" -g "$RESOURCE_GROUP" --settings "COSMOSDB_ENDPOINT=$cosmosdb_endpoint"
+          az functionapp config appsettings set -n "$FUNCTIONAPP_NAME" -g "$RESOURCE_GROUP" --settings "COSMOSDB_KEY=$cosmosdb_key"
+          az functionapp config appsettings set -n "$FUNCTIONAPP_NAME" -g "$RESOURCE_GROUP" --settings "COSMOSDB_DATABASEID=$COSMOSDB_DATABASEID"
     - name: Store Metadata
       uses: actions/upload-artifact@v2
       with:
