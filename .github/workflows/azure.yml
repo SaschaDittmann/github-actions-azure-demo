@@ -67,7 +67,7 @@ jobs:
       with:
         azcliversion: latest
         inlineScript: |
-          az functionapp cors add -n "$FUNCTIONAPP_NAME" -g "$RESOURCE_GROUP" -a "$(cat metadata/webapp_url.txt)"
+          az functionapp cors add -n "$FUNCTIONAPP_NAME" -g "$RESOURCE_GROUP" -a "$(cat metadata/webapp_url.txt | sed 's/\/*$//g')"
     - name: Store Metadata
       uses: actions/upload-artifact@v2
       with:
