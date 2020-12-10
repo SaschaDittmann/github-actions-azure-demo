@@ -1,0 +1,204 @@
+name: Deploy To Azure
+
+on:
+  push:
+    branches:    
+      - dev
+
+jobs:
+  create-azure-resources:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+    - name: Create Metadata Folder
+      run: mkdir -p metadata
+    - name: Create Storage Account (Web App)
+      uses: azure/CLI@v1
+      env:
+        STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+        RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+        REGION: ${{ secrets.AZURE_REGION }}
+      with:
+        azcliversion: latest
+        inlineScript: |
+          az storage account create -n "$STORAGE_ACCOUNT_NAME" -g "$RESOURCE_GROUP" --sku Standard_LRS -l "$REGION"
+    - name: Configure Static Website
+      uses: azure/CLI@v1
+      env:
+        STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+      with:
+        azcliversion: latest
+        inlineScript: |
+          az storage blob service-properties update --account-name "$STORAGE_ACCOUNT_NAME" --static-website --404-document "404.html" --index-document "index.html"
+          webapp_url=$(az storage account show -n githubactionsdemowebapp -g githubactionsdemo --query primaryEndpoints.web -o tsv)
+          echo $webapp_url >> metadata/webapp_url.txt
+          echo "::set-output name=webapp_url::$webapp_url"
+    - name: Create Storage Account (Function App)
+      uses: azure/CLI@v1
+      env:
+        STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_FUNCTIONAPP_STORAGE }}
+        RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+        REGION: ${{ secrets.AZURE_REGION }}
+      with:
+        azcliversion: latest
+        inlineScript: |
+          az storage account create -n "$STORAGE_ACCOUNT_NAME" -g "$RESOURCE_GROUP" --sku Standard_LRS -l "$REGION"
+    - name: Create Function App
+      uses: azure/CLI@v1
+      env:
+        FUNCTIONAPP_NAME: ${{ secrets.AZURE_FUNCTIONAPP_NAME }}
+        STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_FUNCTIONAPP_STORAGE }}
+        RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+        REGION: ${{ secrets.AZURE_REGION }}
+      with:
+        azcliversion: latest
+        inlineScript: |
+          az functionapp create -n "$FUNCTIONAPP_NAME" -g "$RESOURCE_GROUP" --consumption-plan-location "$REGION" -s "$STORAGE_ACCOUNT_NAME" --functions-version 3 --runtime dotnet 
+          az functionapp show -n "$FUNCTIONAPP_NAME" -g "$RESOURCE_GROUP" > metadata/azure-function-app.json
+          functionapp_key=$(az functionapp keys list -n githubactionsdemo-func -g githubactionsdemo --query functionKeys.default -o tsv)
+          echo $functionapp_key >> metadata/functionapp_key.txt
+    - name: Set Function App CORS
+      uses: azure/CLI@v1
+      env:
+        FUNCTIONAPP_NAME: ${{ secrets.AZURE_FUNCTIONAPP_NAME }}
+        RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+      with:
+        azcliversion: latest
+        inlineScript: |
+          webapp_url=$(cat metadata/webapp_url.txt | sed 's/\/*$//g')
+          if [ -z $(az functionapp cors show -n "$FUNCTIONAPP_NAME" -g "$RESOURCE_GROUP" --query 'allowedOrigins' -o tsv | grep "$webapp_url") ]
+          then
+            echo "Adding CORS entry to FunctionApp..."
+            az functionapp cors add -n "$FUNCTIONAPP_NAME" -g "$RESOURCE_GROUP" -a "$webapp_url"
+          else
+            echo "CORS entry already exists, skipping."
+          fi
+    - name: Create CosmosDB Account
+      uses: azure/CLI@v1
+      env:
+        COSMOSDB_ACCOUNT: ${{ secrets.AZURE_COSMOSDB_ACCOUNT }}
+        RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+      with:
+        azcliversion: latest
+        inlineScript: |
+          az cosmosdb create -n "$COSMOSDB_ACCOUNT" -g "$RESOURCE_GROUP"
+    - name: Create CosmosDB Database and Container
+      uses: azure/CLI@v1
+      env:
+        COSMOSDB_ACCOUNT: ${{ secrets.AZURE_COSMOSDB_ACCOUNT }}
+        RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+        COSMOSDB_DATABASEID: ${{ secrets.AZURE_COSMOSDB_DATABASEID }}
+        COSMOSDB_CONTAINERID: ${{ secrets.AZURE_COSMOSDB_CONTAINERID }}
+      with:
+        azcliversion: latest
+        inlineScript: |
+          az cosmosdb sql database create -a "$COSMOSDB_ACCOUNT" -g "$RESOURCE_GROUP" -n "$COSMOSDB_DATABASEID"
+          az cosmosdb sql container create -a "$COSMOSDB_ACCOUNT" -g "$RESOURCE_GROUP" -d "$COSMOSDB_DATABASEID" -n "$COSMOSDB_CONTAINERID" --partition-key-path "/cityname"
+    - name: Set Function App AppSettings
+      uses: azure/CLI@v1
+      env:
+        FUNCTIONAPP_NAME: ${{ secrets.AZURE_FUNCTIONAPP_NAME }}
+        COSMOSDB_ACCOUNT: ${{ secrets.AZURE_COSMOSDB_ACCOUNT }}
+        RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+        COSMOSDB_DATABASEID: ${{ secrets.AZURE_COSMOSDB_DATABASEID }}
+      with:
+        azcliversion: latest
+        inlineScript: |
+          cosmosdb_key=$(az cosmosdb keys list -n "$COSMOSDB_ACCOUNT" -g "$RESOURCE_GROUP" | jq -r '.primaryMasterKey')
+          cosmosdb_endpoint=$(az cosmosdb show -n githubactionsdemo-cosmos -g githubactionsdemo --query 'documentEndpoint' -o tsv)
+          az functionapp config appsettings set -n "$FUNCTIONAPP_NAME" -g "$RESOURCE_GROUP" --settings "COSMOSDB_ENDPOINT=$cosmosdb_endpoint"
+          az functionapp config appsettings set -n "$FUNCTIONAPP_NAME" -g "$RESOURCE_GROUP" --settings "COSMOSDB_KEY=$cosmosdb_key"
+          az functionapp config appsettings set -n "$FUNCTIONAPP_NAME" -g "$RESOURCE_GROUP" --settings "COSMOSDB_DATABASEID=$COSMOSDB_DATABASEID"
+    - name: Store Metadata
+      uses: actions/upload-artifact@v2
+      with:
+        name: metadata
+        path: ./metadata/
+
+  build-webapp:
+    needs: create-azure-resources
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [12.x]
+    steps:
+      - uses: actions/checkout@v1
+      - name: Get Metadata
+        uses: actions/download-artifact@v2
+        with:
+          name: metadata
+          path: ./metadata/
+      - name: Cache node modules
+        uses: actions/cache@v1
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+      - name: Node ${{ matrix.node-version }}
+        uses: actions/setup-node@v1
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Configure Prod Environment File
+        env:
+          FUNCTIONAPP_NAME: ${{ secrets.AZURE_FUNCTIONAPP_NAME }}
+        run: |
+          functionapp_key_escaped=$(cat ./metadata/functionapp_key.txt | sed -e 's/[\/&]/\\&/g')
+          cat ./webapp/src/environments/environment.prod.ts \
+            | sed "s/<name-of-your-functions-app>/$FUNCTIONAPP_NAME/g" \
+            | sed "s/<key-of-your-functions-app>/$functionapp_key_escaped/g" \
+            > ./webapp/src/environments/environment.prod.ts
+      - name: npm ci and npm run build
+        working-directory: ./webapp
+        run: |
+          npm ci
+          npm run build:ci
+      - name: Store Website
+        uses: actions/upload-artifact@v2
+        with:
+          name: static-webapp
+          path: ./webapp/dist/
+
+  deploy-webapp:
+    needs: [build-webapp, create-azure-resources]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Get Website
+      uses: actions/download-artifact@v2
+      with:
+        name: static-webapp
+    - uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+    - name: Upload Files
+      uses: azure/CLI@v1
+      env:
+        STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+      with:
+        azcliversion: latest
+        inlineScript: |
+          az storage blob sync -s ./webapp -c '$web' --account-name "$STORAGE_ACCOUNT_NAME"
+
+  build-and-deploy-azurefunctions:
+    needs: [build-webapp, create-azure-resources]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: Setup DotNet Environment
+      uses: actions/setup-dotnet@v1
+      with:
+        dotnet-version: '3.1.404'
+    - name: 'Resolve Project Dependencies Using Dotnet'
+      shell: bash
+      run: |
+        pushd './azurefunctions'
+        dotnet build --configuration Release --output ./output
+        popd
+    - name: 'Run Azure Functions Action'
+      uses: Azure/functions-action@v1
+      with:
+        app-name: ${{ secrets.AZURE_FUNCTIONAPP_NAME }}
+        package: './azurefunctions/output'
+        publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
