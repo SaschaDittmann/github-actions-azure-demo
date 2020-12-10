@@ -38,7 +38,7 @@ jobs:
     - name: Create Storage Account (Functions App)
       uses: azure/CLI@v1
       env:
-        STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_FUNCTIONS_APP_STORAGE }}
+        STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_FUNCTIONAPP_STORAGE }}
         RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
         REGION: ${{ secrets.AZURE_REGION }}
       with:
@@ -48,26 +48,26 @@ jobs:
     - name: Create Functions App
       uses: azure/CLI@v1
       env:
-        FUNCTIONS_APP_NAME: ${{ secrets.AZURE_FUNCTIONS_APP_NAME }}
-        STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_FUNCTIONS_APP_STORAGE }}
+        FUNCTIONAPP_NAME: ${{ secrets.AZURE_FUNCTIONAPP_NAME }}
+        STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_FUNCTIONAPP_STORAGE }}
         RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
         REGION: ${{ secrets.AZURE_REGION }}
       with:
         azcliversion: latest
         inlineScript: |
-          az functionapp create -n "$FUNCTIONS_APP_NAME" -g "$RESOURCE_GROUP" --consumption-plan-location "$REGION" -s "$STORAGE_ACCOUNT_NAME" --functions-version 3 --runtime dotnet 
-          az functionapp show -n "$FUNCTIONS_APP_NAME" -g "$RESOURCE_GROUP" > metadata/azure-function-app.json
+          az functionapp create -n "$FUNCTIONAPP_NAME" -g "$RESOURCE_GROUP" --consumption-plan-location "$REGION" -s "$STORAGE_ACCOUNT_NAME" --functions-version 3 --runtime dotnet 
+          az functionapp show -n "$FUNCTIONAPP_NAME" -g "$RESOURCE_GROUP" > metadata/azure-function-app.json
           functionapp_key=$(az functionapp keys list -n githubactionsdemo-func -g githubactionsdemo --query functionKeys.default -o tsv)
           echo $functionapp_key >> metadata/functionapp_key.txt
     - name: Set Functions App CORS
       uses: azure/CLI@v1
       env:
-        FUNCTIONS_APP_NAME: ${{ secrets.AZURE_FUNCTIONS_APP_NAME }}
+        FUNCTIONAPP_NAME: ${{ secrets.AZURE_FUNCTIONAPP_NAME }}
         RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
       with:
         azcliversion: latest
         inlineScript: |
-          az functionapp cors add -n "$FUNCTIONS_APP_NAME" -g "$RESOURCE_GROUP" -a "$(cat metadata/webapp_url.txt)"
+          az functionapp cors add -n "$FUNCTIONAPP_NAME" -g "$RESOURCE_GROUP" -a "$(cat metadata/webapp_url.txt)"
     - name: Store Metadata
       uses: actions/upload-artifact@v2
       with:
@@ -100,11 +100,11 @@ jobs:
           node-version: ${{ matrix.node-version }}
       - name: Configure Prod Environment File
         env:
-          FUNCTIONS_APP_NAME: ${{ secrets.AZURE_FUNCTIONS_APP_NAME }}
+          FUNCTIONAPP_NAME: ${{ secrets.AZURE_FUNCTIONAPP_NAME }}
         run: |
           functionapp_key_escaped=$(cat ./metadata/functionapp_key.txt | sed -e 's/[\/&]/\\&/g')
           cat ./webapp/src/environments/environment.prod.ts \
-            | sed "s/<name-of-your-functions-app>/$FUNCTIONS_APP_NAME/g" \
+            | sed "s/<name-of-your-functions-app>/$FUNCTIONAPP_NAME/g" \
             | sed "s/<key-of-your-functions-app>/$functionapp_key_escaped/g" \
             > ./webapp/src/environments/environment.prod.ts
       - name: npm ci and npm run build
@@ -157,6 +157,6 @@ jobs:
       uses: Azure/functions-action@v1
       id: fa
       with:
-        app-name: ${{ env.AZURE_FUNCTIONS_APP_NAME }}
+        app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
         package: './azurefunctions/output'
         publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
