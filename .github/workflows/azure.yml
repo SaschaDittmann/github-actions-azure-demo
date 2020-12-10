@@ -68,6 +68,28 @@ jobs:
         azcliversion: latest
         inlineScript: |
           az functionapp cors add -n "$FUNCTIONAPP_NAME" -g "$RESOURCE_GROUP" -a "$(cat metadata/webapp_url.txt | sed 's/\/*$//g')"
+    - name: Create CosmosDB Account
+      uses: azure/CLI@v1
+      env:
+        COSMOSDB_ACCOUNT: ${{ secrets.AZURE_COSMOSDB_ACCOUNT }}
+        RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+      with:
+        azcliversion: latest
+        inlineScript: |
+          az cosmosdb create -n "$COSMOSDB_ACCOUNT" -g "$RESOURCE_GROUP"
+          az cosmosdb keys list -n "$COSMOSDB_ACCOUNT" -g "$RESOURCE_GROUP" > metadata/cosmosdb_keys.json
+    - name: Create CosmosDB Database and Container
+      uses: azure/CLI@v1
+      env:
+        COSMOSDB_ACCOUNT: ${{ secrets.AZURE_COSMOSDB_ACCOUNT }}
+        RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+        COSMOSDB_DATABASEID: ${{ secrets.AZURE_COSMOSDB_DATABASEID }}
+        COSMOSDB_CONTAINERID: ${{ secrets.AZURE_COSMOSDB_CONTAINERID }}
+      with:
+        azcliversion: latest
+        inlineScript: |
+          az cosmosdb sql database create -a "$COSMOSDB_ACCOUNT" -g "$RESOURCE_GROUP" -n "$COSMOSDB_DATABASEID"
+          az cosmosdb sql container create -a "$COSMOSDB_ACCOUNT" -g "$RESOURCE_GROUP" -d "$COSMOSDB_DATABASEID" -n "$COSMOSDB_CONTAINERID" --partition-key-path "/cityname" --throughput "400"
     - name: Store Metadata
       uses: actions/upload-artifact@v2
       with:
