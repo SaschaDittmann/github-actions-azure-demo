@@ -67,7 +67,14 @@ jobs:
       with:
         azcliversion: latest
         inlineScript: |
-          az functionapp cors add -n "$FUNCTIONAPP_NAME" -g "$RESOURCE_GROUP" -a "$(cat metadata/webapp_url.txt | sed 's/\/*$//g')"
+          webapp_url=$(cat metadata/webapp_url.txt | sed 's/\/*$//g')
+          if [ -z $(az functionapp cors show -n "$FUNCTIONAPP_NAME" -g "$RESOURCE_GROUP" --query 'allowedOrigins' -o tsv | grep "$webapp_url") ]
+          then
+            echo "Adding CORS entry to FunctionApp..."
+            az functionapp cors add -n "$FUNCTIONAPP_NAME" -g "$RESOURCE_GROUP" -a "$webapp_url"
+          else
+            echo "CORS entry already exists, skipping."
+          fi
     - name: Create CosmosDB Account
       uses: azure/CLI@v1
       env:
